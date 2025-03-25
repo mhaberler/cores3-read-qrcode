@@ -10,6 +10,22 @@ If so, the contained SSID and password are used to connect to the access point.
 # Status
 Best results: generating a Wifi URI with [qifi.org](https://qifi.org/) and pointing the camera at the screen or printed out on paper (larger images help, a code of 2cm squared performs worse than a 5x5 or 20x20cm code)
 
-Reading works well from an iPhone if this shortcut is used: https://www.youtube.com/watch?v=yl60Vkyg9CM
+Reading works well from an iPhone if this shortcut is used: https://www.youtube.com/watch?v=yl60Vkyg9CM but see below.
 
 While current Android can generate a Wifi QRcode natively, I had less success with this setup as the generated code obviously requires higher camera resolution.
+
+update: increased resolution from QVGA to VGA which substantially improves decoding quality.
+
+# iPhone Shortcut
+
+While the above shortcut displays the WiFi QRcode properly, it shows a small overlay symbol over the code like so:
+
+![Overlay symbol](assets/with-overlay.jpg)
+
+Unfortunately this makes recognition by the app much harder. However, there's a trick: hit the Edit symbol (bottom right) and
+the QRcode is displayed without overlay, which is recognized perfectly:
+
+![Edit mode](assets/edit-button.jpg)
+
+Maybe there's a way to scale down the image so the overlay symbol doesnt interfere.
+
