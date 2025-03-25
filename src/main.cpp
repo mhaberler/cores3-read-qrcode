@@ -1,6 +1,8 @@
 #include <M5CoreS3.h>
 #include <WiFi.h>
 #include <quirc.h>
+#include "734446__universfield__error-10.h"
+#include "734443__universfield__system-notification-4.h"
 
 // Struct to hold the parsed WiFi configuration
 struct WiFiConfig {
@@ -17,19 +19,26 @@ struct quirc_data *data;
 
 WiFiConfig parseWiFiQR(const String& qrText);
 
-// Convert RGB565 to 8-bit grayscale using luminance weights
-static inline void rgb565_to_grayscale(const uint16_t* input, uint8_t* output, int width, int height) {
-    for (int i = 0; i < width * height; i++) {
-        uint16_t rgb = input[i];
+// {scaleX, skewX, transX, skewY, scaleY, transY}
+float affine[6] = {0.25, 0, 0, 0,  0.25, 0};
 
-        // Extract RGB components
-        uint8_t r = ((rgb >> 11) & 0x1F) << 3;  // 5 bits to 8 bits
-        uint8_t g = ((rgb >> 5) & 0x3F) << 2;   // 6 bits to 8 bits
-        uint8_t b = (rgb & 0x1F) << 3;          // 5 bits to 8 bits
+M5Canvas canvas(&CoreS3.Display);
+M5GFX &display = CoreS3.Display;
 
-        // Calculate grayscale using luminance weights
-        output[i] = (uint8_t)(0.299f * r + 0.587f * g + 0.114f * b);
-    }
+#define VSPACE 5
+
+void chimeError(void) {
+    CoreS3.Speaker.playRaw(
+        __734446__universfield__error_10_wav,
+        __734446__universfield__error_10_wav_len,
+        44100, true);
+}
+
+void chimeSuccess(void) {
+    CoreS3.Speaker.playRaw(
+        __734443__universfield__system_notification_4_wav,
+        __734443__universfield__system_notification_4_wav_len,
+        44100, true);
 }
 
 void setup() {
@@ -37,17 +46,21 @@ void setup() {
     M5.begin();
     auto cfg = M5.config();
     CoreS3.begin(cfg);
+    CoreS3.Speaker.begin();
+    CoreS3.Speaker.setAllChannelVolume(255);
+    // CoreS3.Speaker.tone(440, 200);
 
-    CoreS3.Display.setTextColor(GREEN);
-    CoreS3.Display.setTextDatum(middle_center);
-    CoreS3.Display.setFont(&fonts::Orbitron_Light_24);
-    CoreS3.Display.setTextSize(1);
+    canvas.setColorDepth(1); // mono color
+    canvas.createSprite(display.width(), display.height()/2 - VSPACE);
+    canvas.setFont(&fonts::FreeSans9pt7b);
+    canvas.setTextScroll(true);
 
     // tweak the default camera config
     CoreS3.Camera.config->pixel_format = PIXFORMAT_GRAYSCALE;
-    CoreS3.Camera.config->frame_size = FRAMESIZE_QVGA;
+    CoreS3.Camera.config->frame_size = FRAMESIZE_VGA;
     if (!CoreS3.Camera.begin()) {
-        CoreS3.Display.drawString("Camera Init Fail", CoreS3.Display.width() / 2, CoreS3.Display.height() / 2);
+        canvas.printf("Camera Init failed\r\n");
+        canvas.pushSprite(0, display.height()/2 + VSPACE);
     }
 
     code = (struct quirc_code *)ps_malloc(sizeof(struct quirc_code));
@@ -55,8 +68,9 @@ void setup() {
 
     assert(code != NULL);
     assert(data != NULL);
-    CoreS3.Display.drawString("Camera Init Success", CoreS3.Display.width() / 2, CoreS3.Display.height() / 2);
-    delay(500);
+
+    canvas.printf("Camera Init OK\r\n");
+    canvas.pushSprite(0, display.height()/2 + VSPACE);
 }
 
 void loop() {
@@ -65,60 +79,48 @@ void loop() {
     wl_status_t ws = WiFi.status();
     if (ws ^ wifi_status) {
         wifi_status = ws; // track changes
-        CoreS3.Display.clear();
-        CoreS3.Display.setTextColor(GREEN);
-        // CoreS3.Display.setTextDatum(middle_center);
-        CoreS3.Display.setFont(&fonts::FreeSans12pt7b);
-        CoreS3.Display.setTextSize(1);
 
-        CoreS3.Display.setCursor(0, 20);
         switch (ws) {
             case WL_CONNECTED:
-                CoreS3.Display.println("WiFi: Connected");
-                CoreS3.Display.print("IP: ");
-                CoreS3.Display.println(WiFi.localIP());
+                canvas.printf("WiFi: Connected\r\n");
+                canvas.printf("IP: %s\r\n", WiFi.localIP().toString().c_str());
                 break;
             case WL_NO_SSID_AVAIL:
-                CoreS3.Display.printf("WiFi: SSID\n%s\nnot found\n", wcfg.SSID.c_str());
+                canvas.printf("WiFi: SSID %s not found\r\n", wcfg.SSID.c_str());
                 break;
             case WL_DISCONNECTED:
-                CoreS3.Display.printf("WiFi: disconnected\n");
+                canvas.printf("WiFi: disconnected\r\n");
                 break;
             default:
-                CoreS3.Display.printf("WiFi status: %d\n", ws);
+                canvas.printf("WiFi status: %d\r\n", ws);
                 break;
         }
+        canvas.pushSprite(0, display.height()/2 + VSPACE);
+
         log_i("wifi_status=%d", wifi_status);
     }
     if ((ws != WL_CONNECTED) && CoreS3.Camera.get()) {
         camera_fb_t *fb = CoreS3.Camera.fb;
         if (fb) {
-            if (CoreS3.Camera.config->pixel_format == PIXFORMAT_RGB565) {
-                CoreS3.Display.pushImage(0, 0, CoreS3.Display.width(), CoreS3.Display.height(),
-                                         (uint16_t *)CoreS3.Camera.fb->buf);
-            }
-            if (CoreS3.Camera.config->pixel_format == PIXFORMAT_GRAYSCALE) {
-                CoreS3.Display.pushGrayscaleImage(0, 0, CoreS3.Display.width(), CoreS3.Display.height(),
-                                                  (uint8_t *)CoreS3.Camera.fb->buf, lgfx::v1::grayscale_8bit, TFT_WHITE, TFT_BLACK);
-            }
+
+            CoreS3.Display.pushGrayscaleImageAffine(affine, fb->width, fb->height,
+                                                    (uint8_t *)CoreS3.Camera.fb->buf,
+                                                    lgfx::v1::grayscale_8bit,
+                                                    TFT_WHITE, TFT_BLACK);
+            struct quirc *qr = quirc_new();
             int width = fb->width;
             int height = fb->height;
-            struct quirc *qr = quirc_new();
 
             if (qr && quirc_resize(qr, width, height) >= 0) {
                 uint8_t *image = quirc_begin(qr, &width, &height);
                 if (image) {
-                    if (CoreS3.Camera.config->pixel_format == PIXFORMAT_RGB565) {
-                        rgb565_to_grayscale((const uint16_t*)fb->buf, image,  width, height);
-                    }
-                    if (CoreS3.Camera.config->pixel_format == PIXFORMAT_GRAYSCALE) {
-                        memcpy(image, fb->buf, fb->len);
-                    }
+                    memcpy(image, fb->buf, fb->len);
+
                     quirc_end(qr);
                     int num_codes = quirc_count(qr);
                     if (num_codes) {
-                        // CoreS3.Speaker.tone(1000, 100);
-                        log_i("width %u height %u num_codes %d", fb->width, fb->height,num_codes);
+                        log_i("width %u height %u num_codes %d",
+                              fb->width, fb->height,num_codes);
                     }
 
                     for (int i = 0; i < num_codes; i++) {
@@ -129,6 +131,8 @@ void loop() {
                             err = quirc_decode(code, data);
                         }
                         if (!err) {
+                            chimeSuccess();
+
                             log_i("payload '%s'", data->payload);
                             log_i("Version: %d", data->version);
                             log_i("ECC level: %c", "MLHQ"[data->ecc_level]);
@@ -145,29 +149,19 @@ void loop() {
 
                             if (wcfg.SSID.length() > 0) {
                                 WiFi.begin(wcfg.SSID.c_str(), wcfg.password.c_str());
+                                canvas.printf("SSID: %s\r\n", wcfg.SSID.c_str());
+                                canvas.printf("Password: %s\r\n", wcfg.password.c_str());
+                                canvas.pushSprite(0, display.height()/2+ VSPACE);
+                            } else {
+                                canvas.printf("QR: %s\r\n", payload.c_str());
+                                canvas.pushSprite(0, display.height()/2+ VSPACE);
                             }
-
-                            CoreS3.Display.clear();
-                            CoreS3.Display.setTextColor(GREEN);
-                            CoreS3.Display.setFont(&fonts::FreeSans12pt7b);
-                            CoreS3.Display.setTextSize(1);
-
-                            CoreS3.Display.setCursor(0, 20);
-                            CoreS3.Display.printf("QR: %s\n\n", payload.c_str());
-                            CoreS3.Display.printf("Version: %d\n", data->version);
-                            CoreS3.Display.printf("ECC level: %c\n", "MLHQ"[data->ecc_level]);
-                            CoreS3.Display.printf("Mask: %d\n", data->mask);
-                            CoreS3.Display.printf("Length: %d\n", data->payload_len);
-
                             delay(3000);
                         } else {
-                            CoreS3.Display.clear();
-                            CoreS3.Display.setTextColor(RED);
-                            CoreS3.Display.setFont(&fonts::Orbitron_Light_24);
-                            CoreS3.Display.setTextSize(1);
+                            chimeError();
+                            canvas.printf("decode error: %d\r\n",err);
+                            canvas.pushSprite(0, display.height()/2+ VSPACE);
 
-                            CoreS3.Display.setCursor(20, 20);
-                            CoreS3.Display.printf("decode error: %d\n",err);
                             delay(500);
                         }
                     }
@@ -259,3 +253,4 @@ WiFiConfig parseWiFiQR(const String& qrText) {
     processPair(lastPair, config);
     return config;
 }
+
