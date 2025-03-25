@@ -59,8 +59,9 @@ void setup() {
     CoreS3.Camera.config->pixel_format = PIXFORMAT_GRAYSCALE;
     CoreS3.Camera.config->frame_size = FRAMESIZE_VGA;
     if (!CoreS3.Camera.begin()) {
-        canvas.printf("Camera Init failed\r\n");
-        canvas.pushSprite(0, display.height()/2 + VSPACE);
+        CoreS3.Display.setTextColor(RED);
+        CoreS3.Display.drawString("Camera Init Fail", CoreS3.Display.width() / 2, CoreS3.Display.height() / 2);
+        while (1);
     }
 
     code = (struct quirc_code *)ps_malloc(sizeof(struct quirc_code));
@@ -68,9 +69,6 @@ void setup() {
 
     assert(code != NULL);
     assert(data != NULL);
-
-    canvas.printf("Camera Init OK\r\n");
-    canvas.pushSprite(0, display.height()/2 + VSPACE);
 }
 
 void loop() {
