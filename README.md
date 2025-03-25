@@ -3,6 +3,9 @@
 This repo is a QRcode reading demo for the [M5Stack CoreS3](https://docs.m5stack.com/en/core/CoreS3), which has a builtin camera. Once the code is read successfully, the payload is checked for the [WIFI URI](https://superuser.com/questions/1752083/wifi-qr-code-format-for-wpa2-wpa3) format;
 If so, the contained SSID and password are used to connect to the access point.
 
+
+![CoreS3 QRcode Reader](assets/cores3.jpg)
+
 [Generating a WIFI URI Online](https://qifi.org/)
 
 [Specification of the WIFI URI format](https://www.wi-fi.org/system/files/WPA3%20Specification%20v3.2.pdf#page=25)
@@ -29,3 +32,8 @@ the QRcode is displayed without overlay, which is recognized perfectly:
 
 Maybe there's a way to scale down the image so the overlay symbol doesnt interfere.
 
+# Build
+
+the decoding heavy lifting is done by Daniel Beer's great [quirc](https://github.com/dlbeer/quirc) library which I [slightly modified](https://github.com/mhaberler/quirc.git#mah) to be more in line with small-stacksize embedded platforms.
+
+The code uses the [Pioarduino 3.2rc2 release candidate](https://github.com/pioarduino/platform-espressif32/releases/download/54.03.20-rc2/platform-espressif32.zip) and a [recently patch M5GFX library](https://github.com/m5stack/M5Unified/issues/158).
