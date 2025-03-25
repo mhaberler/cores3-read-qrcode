@@ -3,6 +3,15 @@
 #include <quirc.h>
 #include "734446__universfield__error-10.h"
 #include "734443__universfield__system-notification-4.h"
+#include "esp_wifi.h"
+
+typedef enum {
+    AS_UNCONFIGURED,  // no wifi config available
+    AS_CONNECTING,    // wifi config available
+    AS_CONNECTED,
+    AS_CONNECT_FAILED, // wifi config present but connect failed
+    AS_SCANNING_QRCODE
+} app_state_t;
 
 // Struct to hold the parsed WiFi configuration
 struct WiFiConfig {
@@ -16,6 +25,7 @@ struct WiFiConfig wcfg;
 
 struct quirc_code *code;
 struct quirc_data *data;
+app_state_t appstate = AS_UNCONFIGURED;
 
 WiFiConfig parseWiFiQR(const String& qrText);
 
@@ -24,6 +34,9 @@ float affine[6] = {0.25, 0, 0, 0,  0.25, 0};
 
 M5Canvas canvas(&CoreS3.Display);
 M5GFX &display = CoreS3.Display;
+
+LGFX_Button eraseCfg;
+m5gfx::touch_point_t tp;
 
 #define VSPACE 5
 
@@ -40,7 +53,24 @@ void chimeSuccess(void) {
         __734443__universfield__system_notification_4_wav_len,
         44100, true);
 }
-
+bool readStoredWiFiConfig() {
+    wifi_config_t config;
+    esp_err_t err = esp_wifi_get_config(WIFI_IF_STA, &config);
+    if (err == ESP_OK) {
+        char ssid[33];
+        memcpy(ssid, config.sta.ssid, 32);
+        ssid[32] = '\0';
+        char password[65];
+        memcpy(password, config.sta.password, 64);
+        password[64] = '\0';
+        log_i("Stored SSID: %s", ssid);
+        log_i("Stored Password: %s", password);
+        return strlen(ssid) > 0;
+    } else {
+        log_e("Failed to get Wi-Fi configuration.");
+    }
+    return false;
+}
 void setup() {
 
     M5.begin();
@@ -48,7 +78,8 @@ void setup() {
     CoreS3.begin(cfg);
     CoreS3.Speaker.begin();
     CoreS3.Speaker.setAllChannelVolume(255);
-    // CoreS3.Speaker.tone(440, 200);
+    CoreS3.Speaker.tone(440, 200);
+
 
     canvas.setColorDepth(1); // mono color
     canvas.createSprite(display.width(), display.height()/2 - VSPACE);
@@ -69,10 +100,44 @@ void setup() {
 
     assert(code != NULL);
     assert(data != NULL);
+
+    WiFi.begin();
+    // WiFi.printDiag(Serial);
+
+    if (readStoredWiFiConfig()) {
+        eraseCfg.initButton(&M5.Lcd, 240, 30, 120, 50, TFT_RED, TFT_BLACK, TFT_RED, "Defaults", 2.2, 2.2);
+        eraseCfg.drawButton();
+        appstate = AS_CONNECTING;
+    } else {
+        appstate = AS_SCANNING_QRCODE;
+    }
 }
 
 void loop() {
     M5.update();
+    if(M5.Touch.getCount() > 0) {
+        tp = M5.Touch.getTouchPointRaw();
+    } else {
+        tp.x = -1;
+        tp.y = -1;
+    }
+    if(eraseCfg.contains(tp.x, tp.y)) {
+        eraseCfg.press(true);
+    } else {
+        eraseCfg.press(false);
+    }
+    if (eraseCfg.justReleased()) {
+        log_i("eraseCfg just released");
+        canvas.printf("erasing WiFi config\r\n");
+        canvas.pushSprite(0, display.height()/2+ VSPACE);
+
+        WiFi.eraseAP();
+        WiFi.disconnect(); // reboot here
+        canvas.printf("rebooting..\r\n");
+        canvas.pushSprite(0, display.height()/2+ VSPACE);
+        delay(300);
+        ESP.restart();
+    }
 
     wl_status_t ws = WiFi.status();
     if (ws ^ wifi_status) {
@@ -90,14 +155,14 @@ void loop() {
                 canvas.printf("WiFi: disconnected\r\n");
                 break;
             default:
-                canvas.printf("WiFi status: %d\r\n", ws);
+                // canvas.printf("WiFi status: %d\r\n", ws);
                 break;
         }
         canvas.pushSprite(0, display.height()/2 + VSPACE);
 
         log_i("wifi_status=%d", wifi_status);
     }
-    if ((ws != WL_CONNECTED) && CoreS3.Camera.get()) {
+    if ((appstate == AS_SCANNING_QRCODE) && CoreS3.Camera.get()) {
         camera_fb_t *fb = CoreS3.Camera.fb;
         if (fb) {
 
@@ -146,9 +211,14 @@ void loop() {
                             log_i("password '%s'", wcfg.password.c_str());
 
                             if (wcfg.SSID.length() > 0) {
+                                // WiFi.begin();
+                                // WiFi.eraseAP();
+                                // WiFi.enableSTA(true);
                                 WiFi.begin(wcfg.SSID.c_str(), wcfg.password.c_str());
+                                WiFi.persistent(true);
+                                appstate = AS_CONNECTING;
                                 canvas.printf("SSID: %s\r\n", wcfg.SSID.c_str());
-                                canvas.printf("Password: %s\r\n", wcfg.password.c_str());
+                                // canvas.printf("Password: %s\r\n", wcfg.password.c_str());
                                 canvas.pushSprite(0, display.height()/2+ VSPACE);
                             } else {
                                 canvas.printf("QR: %s\r\n", payload.c_str());
