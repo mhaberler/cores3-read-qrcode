@@ -6,6 +6,7 @@
 #include "esp_wifi.h"
 
 typedef enum {
+    AS_UNDEFINED,
     AS_UNCONFIGURED,  // no wifi config available
     AS_CONNECTING,    // wifi config available
     AS_CONNECTED,
@@ -26,6 +27,7 @@ struct WiFiConfig wcfg;
 struct quirc_code *code;
 struct quirc_data *data;
 app_state_t appstate = AS_UNCONFIGURED;
+app_state_t prev_appstate = AS_UNDEFINED;
 
 WiFiConfig parseWiFiQR(const String& qrText);
 
@@ -114,6 +116,8 @@ void setup() {
 }
 
 void loop() {
+    esp_err_t err;
+
     M5.update();
     if(M5.Touch.getCount() > 0) {
         tp = M5.Touch.getTouchPointRaw();
@@ -139,6 +143,18 @@ void loop() {
         ESP.restart();
     }
 
+    if (appstate ^ prev_appstate) { // appstate changes
+        prev_appstate = appstate;
+        switch (appstate) {
+            case AS_CONNECTING:
+                wifi_config_t config;
+                err = esp_wifi_get_config(WIFI_IF_STA, &config);
+                canvas.printf("trying SSID %s\r\n", config.sta.ssid);
+                break;
+            default:
+                ;
+        }
+    }
     wl_status_t ws = WiFi.status();
     if (ws ^ wifi_status) {
         wifi_status = ws; // track changes
@@ -211,9 +227,6 @@ void loop() {
                             log_i("password '%s'", wcfg.password.c_str());
 
                             if (wcfg.SSID.length() > 0) {
-                                // WiFi.begin();
-                                // WiFi.eraseAP();
-                                // WiFi.enableSTA(true);
                                 WiFi.begin(wcfg.SSID.c_str(), wcfg.password.c_str());
                                 WiFi.persistent(true);
                                 appstate = AS_CONNECTING;
@@ -227,7 +240,7 @@ void loop() {
                             delay(3000);
                         } else {
                             chimeError();
-                            canvas.printf("decode error: %d\r\n",err);
+                            canvas.printf("decode: %s\r\n",quirc_strerror(err));
                             canvas.pushSprite(0, display.height()/2+ VSPACE);
 
                             delay(500);
