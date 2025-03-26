@@ -34,6 +34,6 @@ Maybe there's a way to scale down the image so the overlay symbol doesnt interfe
 
 # Build
 
-the decoding heavy lifting is done by Daniel Beer's great [quirc](https://github.com/dlbeer/quirc) library which I [slightly modified](https://github.com/mhaberler/quirc.git#mah) to be more in line with small-stacksize embedded platforms.
+the decoding heavy lifting is done by Daniel Beer's great [quirc](https://github.com/dlbeer/quirc) library which I [slightly modified](https://github.com/mhaberler/quirc.git#mah) to be more in line with small-stacksize embedded platforms. See here for an intro to the [Quirc library](https://www.dlbeer.co.nz/oss/quirc.html).
 
-The code uses the [Pioarduino 3.2rc2 release candidate](https://github.com/pioarduino/platform-espressif32/releases/download/54.03.20-rc2/platform-espressif32.zip) and a [recently patch M5GFX library](https://github.com/m5stack/M5Unified/issues/158).
+The code uses the [Pioarduino 3.2rc2 release candidate](https://github.com/pioarduino/platform-espressif32/releases/download/54.03.20-rc2/platform-espressif32.zip) and a [recently patched M5GFX library](https://github.com/m5stack/M5Unified/issues/158).

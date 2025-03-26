@@ -37,9 +37,6 @@ float affine[6] = {0.25, 0, 0, 0,  0.25, 0};
 M5Canvas canvas(&CoreS3.Display);
 M5GFX &display = CoreS3.Display;
 
-LGFX_Button eraseCfg;
-m5gfx::touch_point_t tp;
-
 #define VSPACE 5
 
 void chimeError(void) {
@@ -107,8 +104,8 @@ void setup() {
     // WiFi.printDiag(Serial);
 
     if (readStoredWiFiConfig()) {
-        eraseCfg.initButton(&M5.Lcd, 240, 30, 120, 50, TFT_RED, TFT_BLACK, TFT_RED, "Defaults", 2.2, 2.2);
-        eraseCfg.drawButton();
+        canvas.printf("Click Power button for reset to defaults\r\n");
+        canvas.pushSprite(0, display.height()/2+ VSPACE);
         appstate = AS_CONNECTING;
     } else {
         appstate = AS_SCANNING_QRCODE;
@@ -119,19 +116,8 @@ void loop() {
     esp_err_t err;
 
     M5.update();
-    if(M5.Touch.getCount() > 0) {
-        tp = M5.Touch.getTouchPointRaw();
-    } else {
-        tp.x = -1;
-        tp.y = -1;
-    }
-    if(eraseCfg.contains(tp.x, tp.y)) {
-        eraseCfg.press(true);
-    } else {
-        eraseCfg.press(false);
-    }
-    if (eraseCfg.justReleased()) {
-        log_i("eraseCfg just released");
+     if (CoreS3.BtnPWR.wasClicked()) {
+
         canvas.printf("erasing WiFi config\r\n");
         canvas.pushSprite(0, display.height()/2+ VSPACE);
 
