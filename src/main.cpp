@@ -1,15 +1,27 @@
 #include <M5CoreS3.h>
 #include <WiFi.h>
+#include <PicoMQTT.h>
+#include <PicoWebsocket.h>
+#include <ESPmDNS.h>
+#include <ArduinoJson.h>
 #include <quirc.h>
+#include "esp_wifi.h"
+#include "LogCanvas.h"
+#include "slconfig.hpp"
+
+#include <qrcode.h>
+
 #include "734446__universfield__error-10.h"
 #include "734443__universfield__system-notification-4.h"
-#include "esp_wifi.h"
+
 
 typedef enum {
     AS_UNDEFINED,
     AS_UNCONFIGURED,  // no wifi config available
     AS_CONNECTING,    // wifi config available
     AS_CONNECTED,
+    AS_CFG_SENSORLOGGER,
+    AS_SERVICING,
     AS_CONNECT_FAILED, // wifi config present but connect failed
     AS_SCANNING_QRCODE
 } app_state_t;
@@ -36,10 +48,54 @@ WiFiConfig parseWiFiQR(const String& qrText);
 // {scaleX, skewX, transX, skewY, scaleY, transY}
 float affine[6] = {0.25, 0, 0, 0,  0.25, 0};
 
-M5Canvas canvas(&CoreS3.Display);
+// M5Canvas canvas(&CoreS3.Display);
 M5GFX &display = CoreS3.Display;
+LogCanvas canvas(&display);
+
 
 #define VSPACE 5
+
+#define MQTT_PORT 1883
+#define MQTTWS_PORT 81
+
+WiFiServer tcp_server(MQTT_PORT);
+WiFiServer websocket_underlying_server(MQTTWS_PORT);
+PicoWebsocket::Server<::WiFiServer> websocket_server(websocket_underlying_server);
+
+const char* hostname = "picomqtt";
+
+class CustomMQTTServer: public PicoMQTT::Server {
+
+    using  PicoMQTT::Server::Server;
+
+  public:
+    int32_t connected, subscribed, messages;
+
+  protected:
+    void on_connected(const char * client_id) override {
+        canvas.printf("client %s connected\r\n", client_id);
+        connected++;
+    }
+    virtual void on_disconnected(const char * client_id) override {
+        canvas.printf("client %s disconnected\r\n", client_id);
+        connected--;
+    }
+    virtual void on_subscribe(const char * client_id, const char * topic) override {
+        canvas.printf("client %s subscribed %s\r\n", client_id, topic);
+        subscribed++;
+    }
+    virtual void on_unsubscribe(const char * client_id, const char * topic) override {
+        canvas.printf("client %s unsubscribed %s\r\n", client_id, topic);
+        subscribed--;
+    }
+    virtual void on_message(const char * topic, PicoMQTT::IncomingPacket & packet) override {
+        // canvas.printf("message topic=%s\r\n", topic);
+        PicoMQTT::Server::Server::on_message(topic, packet);
+        messages++;
+    }
+};
+
+CustomMQTTServer mqtt(tcp_server, websocket_server);
 
 void chimeError(void) {
     CoreS3.Speaker.playRaw(
@@ -83,18 +139,13 @@ void setup() {
     CoreS3.Speaker.setAllChannelVolume(255);
     CoreS3.Speaker.tone(440, 200);
 
-
-    canvas.setColorDepth(1); // mono color
-    canvas.createSprite(display.width(), display.height()/2 - VSPACE);
-    canvas.setFont(&fonts::FreeSans9pt7b);
-    canvas.setTextScroll(true);
+    canvas.resize(0, display.height() / 2 + VSPACE, display.width(), display.height()/2 - VSPACE);
 
     // tweak the default camera config
     CoreS3.Camera.config->pixel_format = PIXFORMAT_GRAYSCALE;
     CoreS3.Camera.config->frame_size = FRAMESIZE_VGA;
     if (!CoreS3.Camera.begin()) {
-        CoreS3.Display.setTextColor(RED);
-        CoreS3.Display.drawString("Camera Init Fail", CoreS3.Display.width() / 2, CoreS3.Display.height() / 2);
+        canvas.printf("Camera Init failed\r\n");
         while (1);
     }
 
@@ -105,11 +156,9 @@ void setup() {
     assert(data != NULL);
 
     WiFi.begin();
-    // WiFi.printDiag(Serial);
 
     if (readStoredWiFiConfig()) {
         canvas.printf("Click Power button for reset to defaults\r\n");
-        canvas.pushSprite(0, display.height()/2+ VSPACE);
         appstate = AS_CONNECTING;
     } else {
         appstate = AS_SCANNING_QRCODE;
@@ -121,30 +170,14 @@ void loop() {
 
     M5.update();
     if (CoreS3.BtnPWR.wasClicked()) {
-
         canvas.printf("erasing WiFi config\r\n");
-        canvas.pushSprite(0, display.height()/2+ VSPACE);
-
         WiFi.eraseAP();
         WiFi.disconnect(); // reboot here
         canvas.printf("rebooting..\r\n");
-        canvas.pushSprite(0, display.height()/2+ VSPACE);
         delay(300);
         ESP.restart();
     }
 
-    if (appstate ^ prev_appstate) { // appstate changes
-        prev_appstate = appstate;
-        switch (appstate) {
-            case AS_CONNECTING:
-                wifi_config_t config;
-                err = esp_wifi_get_config(WIFI_IF_STA, &config);
-                canvas.printf("trying SSID %s\r\n", config.sta.ssid);
-                break;
-            default:
-                ;
-        }
-    }
     wl_status_t ws = WiFi.status();
     if (ws ^ wifi_status) {
         wifi_status = ws; // track changes
@@ -153,6 +186,7 @@ void loop() {
             case WL_CONNECTED:
                 canvas.printf("WiFi: Connected\r\n");
                 canvas.printf("IP: %s\r\n", WiFi.localIP().toString().c_str());
+                appstate = AS_CONNECTED;
                 break;
             case WL_NO_SSID_AVAIL:
                 canvas.printf("WiFi: SSID %s not found\r\n", wcfg.SSID.c_str());
@@ -164,18 +198,90 @@ void loop() {
                 // canvas.printf("WiFi status: %d\r\n", ws);
                 break;
         }
-        canvas.pushSprite(0, display.height()/2 + VSPACE);
-
         log_i("wifi_status=%d", wifi_status);
     }
+
+    if (appstate ^ prev_appstate) { // appstate changes
+        prev_appstate = appstate;
+        switch (appstate) {
+            case AS_CONNECTING:
+                wifi_config_t config;
+                err = esp_wifi_get_config(WIFI_IF_STA, &config);
+                if (strlen((const char *)config.sta.ssid) == 0) {
+                    // no stored WiFi config, enter QR scan mode
+                } else {
+                    // try stored WiFi config
+                    canvas.printf("trying SSID %s\r\n", config.sta.ssid);
+                }
+                break;
+            case AS_SCANNING_QRCODE:
+                canvas.printf("point camera at WiFi QRcode:\r\n");
+                break;
+            case AS_CONNECTED:
+                M5.Display.clear();
+                // Start mDNS
+                if (MDNS.begin(hostname)) {
+                    MDNS.addService("mqtt", "tcp", 1883);
+                    MDNS.addService("mqtt-ws", "tcp", 81);
+                    mdns_service_instance_name_set("_mqtt", "_tcp", "MQTT/TCP broker");
+                    mdns_service_instance_name_set("_mqtt-ws", "_tcp", "MQTT/Websockets broker");
+                }
+                mqtt.begin();
+                {
+                    String qrcode;
+                    JsonDocument doc;
+                    genDefaultCfg(doc);
+
+                    // patch up the default config as needed
+                    JsonObject sensorState = doc["sensorState"].to<JsonObject>();
+
+                    sensorState["Barometer"]["enabled"] = true;
+                    sensorState["Barometer"]["speed"] = 1000;
+
+                    sensorState["Location"]["enabled"] = true;
+                    sensorState["Location"]["speed"] = 1000;
+
+                    sensorState["Microphone"]["enabled"] = true;
+                    sensorState["Microphone"]["speed"] = "lossless";
+
+                    // doc["http"]["enabled"] = false;
+                    // doc["http"]["url"] = "http://" + WiFi.localIP().toString() + ":80/data";
+
+                    doc["mqtt"]["enabled"] =  false;
+                    doc["mqtt"]["url"] = WiFi.localIP().toString() ;
+                    doc["mqtt"]["port"] = "1883";
+                    doc["mqtt"]["tls"] =  false;
+                    doc["mqtt"]["connectionType"] = "TCP";
+                    doc["mqtt"]["subscribeTopic"] = "#";
+                    doc["mqtt"]["subscribeEnabled"] = true;
+                    doc["mqtt"]["skip"] =  false;
+
+                    // serializeJsonPretty(doc, Serial);
+
+                    sensorloggerCfg(doc, qrcode);
+                    log_d("qrcode: %s", qrcode.c_str());
+
+                    M5.Display.qrcode(qrcode.c_str());
+                }
+                appstate = AS_CFG_SENSORLOGGER;
+                break;
+
+            case AS_SERVICING:
+                canvas.printf("serving client\r\n");
+                break;
+
+            default:
+                ;
+        }
+    }
+
     if ((appstate == AS_SCANNING_QRCODE) && CoreS3.Camera.get()) {
         camera_fb_t *fb = CoreS3.Camera.fb;
         if (fb) {
-
-            CoreS3.Display.pushGrayscaleImageAffine(affine, fb->width, fb->height,
-                                                    (uint8_t *)CoreS3.Camera.fb->buf,
-                                                    lgfx::v1::grayscale_8bit,
-                                                    TFT_WHITE, TFT_BLACK);
+            display.pushGrayscaleImageAffine(affine, fb->width, fb->height,
+                                             (uint8_t *)CoreS3.Camera.fb->buf,
+                                             lgfx::v1::grayscale_8bit,
+                                             TFT_WHITE, TFT_BLACK);
             int width = fb->width;
             int height = fb->height;
             if (!qr) {
@@ -225,17 +331,13 @@ void loop() {
                             appstate = AS_CONNECTING;
                             canvas.printf("SSID: %s\r\n", wcfg.SSID.c_str());
                             // canvas.printf("Password: %s\r\n", wcfg.password.c_str());
-                            canvas.pushSprite(0, display.height()/2+ VSPACE);
                         } else {
                             canvas.printf("QR: %s\r\n", payload.c_str());
-                            canvas.pushSprite(0, display.height()/2+ VSPACE);
                         }
                         delay(3000);
                     } else {
                         chimeError();
                         canvas.printf("decode: %s\r\n",quirc_strerror(err));
-                        canvas.pushSprite(0, display.height()/2+ VSPACE);
-
                         delay(500);
                     }
                 }
@@ -243,6 +345,21 @@ void loop() {
             CoreS3.Camera.free();
         }
     }
+    // Handle MQTT
+    mqtt.loop();
+    if (appstate == AS_CFG_SENSORLOGGER) {
+        auto touchPoint = CoreS3.Touch.getDetail();
+        bool touched = (touchPoint.state == m5::touch_state_t::touch);
+        if ((mqtt.messages > 0) || mqtt.connected || touched ) {
+            // use full screen for logging
+            canvas.resize(0, 0, display.width(), display.height());
+            if (!touched) {
+                canvas.printf("MQTT client seen\r\n");
+            }
+            appstate = AS_SERVICING;
+        }
+    }
+
     yield();
 }
 
