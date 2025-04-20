@@ -68,14 +68,27 @@ void genDefaultCfg(JsonDocument &doc) {
 
     // Create mqtt object
     JsonObject mqtt = doc["mqtt"].to<JsonObject>();
+    // Kelvin says:
+    // In the latest release from testflight, add a new key "merge" to any value (e.g. set it to true),
+    // then the "http" and "mqtt" keys will just merge in
+
+    mqtt["merge"] = true;
+    // does the above "merge: true" mean that the following three lines overwrite existing values
+    // but the commented out lines retain the existing values?
+    // at least that is how I understand it
+
+    // followup: does the 'merge' key only work at this object or would this work above as well?
+    // say Orientation["merge"] = true; ?
+
     mqtt["enabled"] = true;
     mqtt["url"] = "192.168.1.99";
     mqtt["port"] = "8884";
-    mqtt["tls"] = true;
-    mqtt["topic"] = "sensor-logger";
-    mqtt["batchPeriod"] = 1000;
-    mqtt["connectionType"] = "Websocket";
-    mqtt["subscribeTopic"] = "";
-    mqtt["skip"] = true;
-    mqtt["subscribeEnabled"] = true;
+
+    // mqtt["tls"] = true;
+    // mqtt["topic"] = "sensor-logger";
+    // mqtt["batchPeriod"] = 1000;
+    // mqtt["connectionType"] = "Websocket";
+    // mqtt["subscribeTopic"] = "";
+    // mqtt["skip"] = true;
+    // mqtt["subscribeEnabled"] = true;
 }
