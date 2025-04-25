@@ -41,6 +41,9 @@ bool sensorloggerCfg(const JsonDocument &doc, String &output) {
 // recreated from sensorlogger "reset to defaults" and exported
 void genDefaultCfg(JsonDocument &doc) {
 
+    doc["merge"] = true;
+
+
     // Create sensorState object
     JsonObject sensorState = doc["sensorState"].to<JsonObject>();
 
@@ -72,7 +75,6 @@ void genDefaultCfg(JsonDocument &doc) {
     // In the latest release from testflight, add a new key "merge" to any value (e.g. set it to true),
     // then the "http" and "mqtt" keys will just merge in
 
-    mqtt["merge"] = true;
     // does the above "merge: true" mean that the following three lines overwrite existing values
     // but the commented out lines retain the existing values?
     // at least that is how I understand it
