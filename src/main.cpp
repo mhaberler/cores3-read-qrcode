@@ -10,6 +10,8 @@
 #include "slconfig.hpp"
 
 #include <qrcode.h>
+#include <Wire.h>
+#include <Adafruit_VL53L0X.h>
 
 #include "734446__universfield__error-10.h"
 #include "734443__universfield__system-notification-4.h"
@@ -33,6 +35,7 @@ struct WiFiConfig {
     String password;
 };
 
+
 wl_status_t wifi_status = WL_STOPPED;
 struct WiFiConfig wcfg;
 
@@ -52,6 +55,8 @@ float affine[6] = {0.25, 0, 0, 0,  0.25, 0};
 M5GFX &display = CoreS3.Display;
 LogCanvas canvas(&display);
 
+Adafruit_VL53L0X tofSensor = Adafruit_VL53L0X();
+bool tofSensorPresent;
 
 #define VSPACE 5
 
@@ -148,6 +153,16 @@ void setup() {
         canvas.printf("Camera Init failed\r\n");
         while (1);
     }
+
+    M5.Power.begin();
+    M5.Power.setExtOutput(true); // Enable external output (red port) power
+
+    // tofSensor.setTimeout(500);
+    tofSensorPresent = tofSensor.begin(0x29, true);
+    canvas.printf("VL53L0X %s present\r\n",
+                  tofSensorPresent ? "is" : "is not");
+    Serial.printf("VL53L0X %s present\r\n",
+                  tofSensorPresent ? "is" : "is not");
 
     code = (struct quirc_code *)ps_malloc(sizeof(struct quirc_code));
     data = (struct quirc_data *)ps_malloc(sizeof(struct quirc_data));
@@ -268,6 +283,7 @@ void loop() {
 
             case AS_SERVICING:
                 canvas.printf("serving client\r\n");
+
                 break;
 
             default:
@@ -359,7 +375,27 @@ void loop() {
             appstate = AS_SERVICING;
         }
     }
+    static unsigned long last_report = 0; // last report time
 
+    if (appstate == AS_SERVICING && tofSensorPresent) {
+        if (millis() - last_report > 500) {
+            if (tofSensorPresent) {
+                VL53L0X_RangingMeasurementData_t measure;
+                tofSensor.rangingTest(&measure, false);
+                JsonDocument output;
+
+                if (measure.RangeStatus != 4) { // Valid measurement
+                    output["mm"] =  measure.RangeMilliMeter;
+                }
+                output["status"] = measure.RangeStatus;
+
+                auto publish = mqtt.begin_publish("tofsensor", measureJson(output));
+                serializeJson(output, publish);
+                publish.send();
+                last_report = millis();
+            }
+        }
+    }
     yield();
 }
 
