@@ -12,6 +12,7 @@
 #include <qrcode.h>
 #include <Wire.h>
 #include <Adafruit_VL53L0X.h>
+#define TOF_INTERVAL 100  // mS
 
 #include "734446__universfield__error-10.h"
 #include "734443__universfield__system-notification-4.h"
@@ -159,6 +160,11 @@ void setup() {
 
     // tofSensor.setTimeout(500);
     tofSensorPresent = tofSensor.begin(0x29, true);
+    // start continuous ranging
+    if (tofSensorPresent) {
+        tofSensor.startRangeContinuous(TOF_INTERVAL);
+    }
+
     canvas.printf("VL53L0X %s present\r\n",
                   tofSensorPresent ? "is" : "is not");
     Serial.printf("VL53L0X %s present\r\n",
@@ -378,13 +384,13 @@ void loop() {
     static unsigned long last_report = 0; // last report time
 
     if (appstate == AS_SERVICING && tofSensorPresent) {
-        if (millis() - last_report > 500) {
+        if (millis() - last_report > TOF_INTERVAL) {
             if (tofSensorPresent) {
                 VL53L0X_RangingMeasurementData_t measure;
                 tofSensor.rangingTest(&measure, false);
                 JsonDocument output;
 
-                if (measure.RangeStatus != 4) { // Valid measurement
+                if (measure.RangeStatus == 0) { // Valid measurement
                     output["mm"] =  measure.RangeMilliMeter;
                 }
                 output["status"] = measure.RangeStatus;

@@ -1,4 +1,5 @@
 
+#include <WiFi.h>
 #include "slconfig.hpp"
 #include "base64.h"
 
@@ -42,55 +43,16 @@ bool sensorloggerCfg(const JsonDocument &doc, String &output) {
 void genDefaultCfg(JsonDocument &doc) {
 
     doc["merge"] = true;
-
-
-    // Create sensorState object
-    JsonObject sensorState = doc["sensorState"].to<JsonObject>();
-
-    // Add sensor objects with their properties
-    sensorState["Orientation"]["enabled"] = false;
-    sensorState["Magnetometer"]["enabled"] = false;
-    sensorState["Compass"]["enabled"] = false;
-    sensorState["Barometer"]["enabled"] = false;
-    sensorState["Location"]["enabled"] = false;
-    sensorState["Accelerometer"]["enabled"] = false;
-
-    sensorState["Gravity"].to<JsonObject>();
-    sensorState["Gyroscope"].to<JsonObject>();
-
-    sensorState["Microphone"]["enabled"] = false;
-    sensorState["Bluetooth"]["enabled"] = false;
-
-    sensorState["uncalibrated"] = false;
-
-    // Create http object
-    // JsonObject http = doc["http"].to<JsonObject>();
-    // http["enabled"] = true;
-    // http["url"] = "http://192.168.1.99:8000/data";
-    // http["batchPeriod"] = 1000;
-
-    // Create mqtt object
     JsonObject mqtt = doc["mqtt"].to<JsonObject>();
-    // Kelvin says:
-    // In the latest release from testflight, add a new key "merge" to any value (e.g. set it to true),
-    // then the "http" and "mqtt" keys will just merge in
 
-    // does the above "merge: true" mean that the following three lines overwrite existing values
-    // but the commented out lines retain the existing values?
-    // at least that is how I understand it
-
-    // followup: does the 'merge' key only work at this object or would this work above as well?
-    // say Orientation["merge"] = true; ?
-
-    mqtt["enabled"] = true;
-    mqtt["url"] = "192.168.1.99";
-    mqtt["port"] = "8884";
-
-    // mqtt["tls"] = true;
-    // mqtt["topic"] = "sensor-logger";
-    // mqtt["batchPeriod"] = 1000;
-    // mqtt["connectionType"] = "Websocket";
-    // mqtt["subscribeTopic"] = "";
-    // mqtt["skip"] = true;
-    // mqtt["subscribeEnabled"] = true;
+    mqtt["enabled"] = false;
+    mqtt["url"] = WiFi.localIP().toString();
+    mqtt["port"] = "1883";
+    mqtt["tls"] = false;
+    mqtt["topic"] = "sensor-logger";
+    mqtt["connectionType"] = "TCP";
+    mqtt["subscribeTopic"] = "tofsensor";   // no effect
+    mqtt["skip"] = false;
+    mqtt["subscribeEnabled"] = true;
+    mqtt["batchPeriod"] = 1000;
 }
