@@ -6,8 +6,14 @@ class LogCanvas : public M5Canvas {
     int32_t _y;
     int32_t _w;
     int32_t _h;
+    LovyanGFX* _parent;
   public:
     LogCanvas(LovyanGFX* parent) : M5Canvas(parent) {
+      _parent = parent;
+      _x = 0;
+      _y = 0;
+      _w = 0;
+      _h = 0;
     }
     void resize(int32_t x, int32_t y, int32_t w, int32_t h)  {
         _x = x;
@@ -21,7 +27,7 @@ class LogCanvas : public M5Canvas {
         setFont(&fonts::FreeSans9pt7b);
         setTextScroll(true);
         setCursor(0, 0);
-        pushSprite(_x, _y);
+        pushSprite(getParent(), _x, _y);
     }
     size_t printf(const char *format, ...) {
         va_list arg;

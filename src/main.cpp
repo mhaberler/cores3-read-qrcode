@@ -54,7 +54,8 @@ float affine[6] = {0.25, 0, 0, 0,  0.25, 0};
 
 // M5Canvas canvas(&CoreS3.Display);
 M5GFX &display = CoreS3.Display;
-LogCanvas canvas(&display);
+LogCanvas *canvas;
+
 
 Adafruit_VL53L0X tofSensor = Adafruit_VL53L0X();
 bool tofSensorPresent;
@@ -79,23 +80,23 @@ class CustomMQTTServer: public PicoMQTT::Server {
 
   protected:
     void on_connected(const char * client_id) override {
-        canvas.printf("client %s connected\r\n", client_id);
+        canvas->printf("client %s connected\r\n", client_id);
         connected++;
     }
     virtual void on_disconnected(const char * client_id) override {
-        canvas.printf("client %s disconnected\r\n", client_id);
+        canvas->printf("client %s disconnected\r\n", client_id);
         connected--;
     }
     virtual void on_subscribe(const char * client_id, const char * topic) override {
-        canvas.printf("client %s subscribed %s\r\n", client_id, topic);
+        canvas->printf("client %s subscribed %s\r\n", client_id, topic);
         subscribed++;
     }
     virtual void on_unsubscribe(const char * client_id, const char * topic) override {
-        canvas.printf("client %s unsubscribed %s\r\n", client_id, topic);
+        canvas->printf("client %s unsubscribed %s\r\n", client_id, topic);
         subscribed--;
     }
     virtual void on_message(const char * topic, PicoMQTT::IncomingPacket & packet) override {
-        // canvas.printf("message topic=%s\r\n", topic);
+        // canvas->printf("message topic=%s\r\n", topic);
         PicoMQTT::Server::Server::on_message(topic, packet);
         messages++;
     }
@@ -145,13 +146,15 @@ void setup() {
     CoreS3.Speaker.setAllChannelVolume(255);
     CoreS3.Speaker.tone(440, 200);
 
-    canvas.resize(0, display.height() / 2 + VSPACE, display.width(), display.height()/2 - VSPACE);
+    canvas = new LogCanvas(&display);
+
+    canvas->resize(0, CoreS3.Display.height() / 2 + VSPACE, CoreS3.Display.width(), CoreS3.Display.height()/2 - VSPACE);
 
     // tweak the default camera config
     CoreS3.Camera.config->pixel_format = PIXFORMAT_GRAYSCALE;
     CoreS3.Camera.config->frame_size = FRAMESIZE_VGA;
     if (!CoreS3.Camera.begin()) {
-        canvas.printf("Camera Init failed\r\n");
+        canvas->printf("Camera Init failed\r\n");
         while (1);
     }
 
@@ -165,7 +168,7 @@ void setup() {
         tofSensor.startRangeContinuous(TOF_INTERVAL);
     }
 
-    canvas.printf("VL53L0X %s present\r\n",
+    canvas->printf("VL53L0X %s present\r\n",
                   tofSensorPresent ? "is" : "is not");
     Serial.printf("VL53L0X %s present\r\n",
                   tofSensorPresent ? "is" : "is not");
@@ -179,7 +182,7 @@ void setup() {
     WiFi.begin();
 
     if (readStoredWiFiConfig()) {
-        canvas.printf("Click Power button for reset to defaults\r\n");
+        canvas->printf("Click Power button for reset to defaults\r\n");
         appstate = AS_CONNECTING;
     } else {
         appstate = AS_SCANNING_QRCODE;
@@ -191,10 +194,10 @@ void loop() {
 
     M5.update();
     if (CoreS3.BtnPWR.wasClicked()) {
-        canvas.printf("erasing WiFi config\r\n");
+        canvas->printf("erasing WiFi config\r\n");
         WiFi.eraseAP();
         WiFi.disconnect(); // reboot here
-        canvas.printf("rebooting..\r\n");
+        canvas->printf("rebooting..\r\n");
         delay(300);
         ESP.restart();
     }
@@ -205,18 +208,18 @@ void loop() {
 
         switch (ws) {
             case WL_CONNECTED:
-                canvas.printf("WiFi: Connected\r\n");
-                canvas.printf("IP: %s\r\n", WiFi.localIP().toString().c_str());
+                canvas->printf("WiFi: Connected\r\n");
+                canvas->printf("IP: %s\r\n", WiFi.localIP().toString().c_str());
                 appstate = AS_CONNECTED;
                 break;
             case WL_NO_SSID_AVAIL:
-                canvas.printf("WiFi: SSID %s not found\r\n", wcfg.SSID.c_str());
+                canvas->printf("WiFi: SSID %s not found\r\n", wcfg.SSID.c_str());
                 break;
             case WL_DISCONNECTED:
-                canvas.printf("WiFi: disconnected\r\n");
+                canvas->printf("WiFi: disconnected\r\n");
                 break;
             default:
-                // canvas.printf("WiFi status: %d\r\n", ws);
+                // canvas->printf("WiFi status: %d\r\n", ws);
                 break;
         }
         log_i("wifi_status=%d", wifi_status);
@@ -232,11 +235,11 @@ void loop() {
                     // no stored WiFi config, enter QR scan mode
                 } else {
                     // try stored WiFi config
-                    canvas.printf("trying SSID %s\r\n", config.sta.ssid);
+                    canvas->printf("trying SSID %s\r\n", config.sta.ssid);
                 }
                 break;
             case AS_SCANNING_QRCODE:
-                canvas.printf("point camera at WiFi QRcode:\r\n");
+                canvas->printf("point camera at WiFi QRcode:\r\n");
                 break;
             case AS_CONNECTED:
                 M5.Display.clear();
@@ -288,7 +291,7 @@ void loop() {
                 break;
 
             case AS_SERVICING:
-                canvas.printf("serving client\r\n");
+                canvas->printf("serving client\r\n");
 
                 break;
 
@@ -351,15 +354,15 @@ void loop() {
                             WiFi.begin(wcfg.SSID.c_str(), wcfg.password.c_str());
                             WiFi.persistent(true);
                             appstate = AS_CONNECTING;
-                            canvas.printf("SSID: %s\r\n", wcfg.SSID.c_str());
-                            // canvas.printf("Password: %s\r\n", wcfg.password.c_str());
+                            canvas->printf("SSID: %s\r\n", wcfg.SSID.c_str());
+                            // canvas->printf("Password: %s\r\n", wcfg.password.c_str());
                         } else {
-                            canvas.printf("QR: %s\r\n", payload.c_str());
+                            canvas->printf("QR: %s\r\n", payload.c_str());
                         }
                         delay(3000);
                     } else {
                         chimeError();
-                        canvas.printf("decode: %s\r\n",quirc_strerror(err));
+                        canvas->printf("decode: %s\r\n",quirc_strerror(err));
                         delay(500);
                     }
                 }
@@ -374,9 +377,9 @@ void loop() {
         bool touched = (touchPoint.state == m5::touch_state_t::touch);
         if ((mqtt.messages > 0) || mqtt.connected || touched ) {
             // use full screen for logging
-            canvas.resize(0, 0, display.width(), display.height());
+            canvas->resize(0, 0, CoreS3.Display.width(), CoreS3.Display.height());
             if (!touched) {
-                canvas.printf("MQTT client seen\r\n");
+                canvas->printf("MQTT client seen\r\n");
             }
             appstate = AS_SERVICING;
         }
